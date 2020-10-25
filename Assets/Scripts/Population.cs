@@ -24,6 +24,10 @@ public class Population : MonoBehaviour
     float averageResistance;
     float amountAlive;
 
+    Organism org1;
+    Organism org2;
+    bool mating;
+
     public TextMeshProUGUI speedText;
     public TextMeshProUGUI senseText;
     public TextMeshProUGUI sizeText;
@@ -42,23 +46,56 @@ public class Population : MonoBehaviour
     void Start()
     {
         StartCoroutine(Iterations());
+        mating = false;
 
         for (int i = 0; i < firstGenSize; i++)
         {
             Spawn();
         }
 
-        StartCoroutine(VisualizeData());
+        StartCoroutine(LookForMates());
 
         iterationCount.text = "Iteration: 1";
     }
 
     void Update()
     {
-        angle = Mathf.Lerp(0f, 36f, Time.deltaTime);
-        directionalLight.transform.Rotate(Vector3.right, angle);
+        //angle = Mathf.Lerp(0f, 36f, Time.deltaTime);
+        //directionalLight.transform.Rotate(Vector3.right, angle);
 
         LookForMates();
+
+        if (mating)
+        {
+            //Move towards eachother while the other is still mating, otherwise go back to wandering and remove the other org from list
+            if (org2.currentState == Organism.BehaviourState.Mate && org2 != null)
+            {
+                org1.transform.position = Vector3.MoveTowards(org1.transform.position, org2.transform.position, org1.genome[0] * Time.deltaTime);
+                org1.transform.LookAt(org2.transform.position);
+            }
+            else
+            {
+                org1.SetState(Organism.BehaviourState.Wander);
+            }
+
+            if (org1.currentState == Organism.BehaviourState.Mate && org1 != null)
+            {
+                org2.transform.position = Vector3.MoveTowards(org2.transform.position, org1.transform.position, org2.genome[0] * Time.deltaTime);
+                org2.transform.LookAt(org1.transform.position);
+            }
+            else
+            {
+                org2.SetState(Organism.BehaviourState.Wander);
+            }
+
+            //When close, create offspring
+            if (Vector3.Distance(org1.transform.position, org2.transform.position) <= 1f)
+            {
+                //Create offspring
+                Mate(org1, org2);
+                mating = false;
+            }
+        }
     }
 
     void Spawn()
@@ -125,38 +162,34 @@ public class Population : MonoBehaviour
         }
     }
 
-    IEnumerator VisualizeData()
+    void VisualizeData()
     {
-        while(population.Count > 0)
+        
+        averageSpeed = 0;
+        averageSense = 0;
+        averageSize = 0;
+        averageResistance = 0;
+        amountAlive = 0;
+
+        foreach (Organism organism in population)
         {
-            averageSpeed = 0;
-            averageSense = 0;
-            averageSize = 0;
-            averageResistance = 0;
-            amountAlive = 0;
-
-            foreach (Organism organism in population)
-            {
-                averageSpeed += organism.genome[0];
-                averageSense += organism.genome[1];
-                averageSize += organism.genome[2];
-                averageResistance += organism.genome[3];
-            }
-
-            averageSpeed = averageSpeed / population.Count;
-            averageSense = averageSense / population.Count;
-            averageSize = averageSize / population.Count;
-            averageResistance = averageResistance / population.Count;
-            amountAlive = population.Count;
-
-            speedText.text = (Mathf.Round(averageSpeed * 100) / 100).ToString();
-            senseText.text = (Mathf.Round(averageSense * 100) / 100).ToString();
-            sizeText.text = (Mathf.Round(averageSize * 100) / 100).ToString();
-            resistanceText.text = (Mathf.Round(averageResistance * 100) / 100).ToString();
-            totalPop.text = amountAlive.ToString();
-
-            yield return new WaitForSeconds(10);
+            averageSpeed += organism.genome[0];
+            averageSense += organism.genome[1];
+            averageSize += organism.genome[2];
+            averageResistance += organism.genome[3];
         }
+
+        averageSpeed = averageSpeed / population.Count;
+        averageSense = averageSense / population.Count;
+        averageSize = averageSize / population.Count;
+        averageResistance = averageResistance / population.Count;
+        amountAlive = population.Count;
+
+        speedText.text = (Mathf.Round(averageSpeed * 100) / 100).ToString();
+        senseText.text = (Mathf.Round(averageSense * 100) / 100).ToString();
+        sizeText.text = (Mathf.Round(averageSize * 100) / 100).ToString();
+        resistanceText.text = (Mathf.Round(averageResistance * 100) / 100).ToString();
+        totalPop.text = amountAlive.ToString();
     }
 
     IEnumerator Iterations()
@@ -167,6 +200,8 @@ public class Population : MonoBehaviour
 
             if (timer == 10)
             {
+                VisualizeData();
+
                 float stormChance = Random.Range(1, 11);
 
                 if(stormChance == 2)
@@ -194,70 +229,57 @@ public class Population : MonoBehaviour
         }
     }
 
-    void LookForMates()
+    IEnumerator LookForMates()
     {
-        //Loop through all the selected organisms
-        for (int i = 0; i < selectedOrganisms.Count; i++)
+        while (population.Count > 0)
         {
-            for (int j = 0; j < selectedOrganisms.Count; j++)
+            //Loop through all the selected organisms
+            if (selectedOrganisms.Count > 1)
             {
-                if (selectedOrganisms[i] != null && selectedOrganisms[j] != null)
-                {                  
-                    if (selectedOrganisms[i] != selectedOrganisms[j]) //And the two variables don't point at the same organism
+                for (int i = 0; i < selectedOrganisms.Count; i++)
+                {
+                    for (int j = 0; j < selectedOrganisms.Count; j++)
                     {
-                        //The needed range is the biggest of the two senseRadiï
-                        float neededRange = Mathf.Max(selectedOrganisms[i].sensoryDistance, selectedOrganisms[j].sensoryDistance);
-
-                        //If the distance of the organisms is smaller than the needed range to mate.
-                        if (Vector3.Distance(selectedOrganisms[i].transform.position, selectedOrganisms[j].transform.position) <= neededRange)
+                        if (selectedOrganisms[i] != null && selectedOrganisms[j] != null)
                         {
-                            Organism org1 = selectedOrganisms[i];
-                            Organism org2 = selectedOrganisms[j];
+                            if (selectedOrganisms[i] != selectedOrganisms[j]) //And the two variables don't point at the same organism
+                            {
+                                //The needed range is the biggest of the two senseRadiï
+                                float neededRange = Mathf.Max(selectedOrganisms[i].sensoryDistance, selectedOrganisms[j].sensoryDistance);
 
-                            //Mate and remove the two organisms
-                            org1.SetState(Organism.BehaviourState.Mate);
-                            org2.SetState(Organism.BehaviourState.Mate);
+                                //If the distance of the organisms is smaller than the needed range to mate.
+                                if (Vector3.Distance(selectedOrganisms[i].transform.position, selectedOrganisms[j].transform.position) <= neededRange)
+                                {
+                                    org1 = selectedOrganisms[i];
+                                    org2 = selectedOrganisms[j];
 
-                            //Move towards eachother while the other is still mating, otherwise go back to wandering and remove the other org from list
-                            if (org2.currentState == Organism.BehaviourState.Mate && org2 != null)
-                            {
-                                org1.transform.position = Vector3.MoveTowards(org1.transform.position, org2.transform.position, org1.genome[0] * Time.deltaTime);
-                                org1.transform.LookAt(org2.transform.position);
-                            }
-                            else
-                            {
-                                org1.SetState(Organism.BehaviourState.Wander);
-                            }
+                                    //Mate and remove the two organisms
+                                    org1.SetState(Organism.BehaviourState.Mate);
+                                    org2.SetState(Organism.BehaviourState.Mate);
 
-                            if (org1.currentState == Organism.BehaviourState.Mate && org1 != null)
-                            {
-                                org2.transform.position = Vector3.MoveTowards(org2.transform.position, org1.transform.position, org2.genome[0] * Time.deltaTime);
-                                org2.transform.LookAt(org1.transform.position);
-                            }
-                            else
-                            {
-                                org2.SetState(Organism.BehaviourState.Wander);
+                                    selectedOrganisms.Remove(org1);
+                                    selectedOrganisms.Remove(org2);
+
+                                    mating = true;
+                                }
                             }
 
-                            //When close, create offspring
-                            if (Vector3.Distance(org1.transform.position, org2.transform.position) <= 1f)
-                            {
-                                //Create offspring
-                                Mate(org1, org2);
-                            }
+                        }
+                        else if (selectedOrganisms[i] == null)
+                        {
+                            selectedOrganisms.Remove(selectedOrganisms[i]);
+                            //selectedOrganisms[j].currentState = Organism.BehaviourState.Wander;
+                        }
+                        else if (selectedOrganisms[j] == null)
+                        {
+                            selectedOrganisms.Remove(selectedOrganisms[j]);
+                            //selectedOrganisms[i].currentState = Organism.BehaviourState.Wander;
                         }
                     }
-                    
-                }
-                else if(selectedOrganisms[i] == null)
-                {
-                    selectedOrganisms.Remove(selectedOrganisms[i]);
-                }
-                else if(selectedOrganisms[j] == null)
-                {
-                    selectedOrganisms.Remove(selectedOrganisms[j]);
                 }
             }
+
+            yield return new WaitForSeconds(0.1f);
         }
     }
 
@@ -338,9 +360,5 @@ public class Population : MonoBehaviour
         //Parents cant mate again for a while
         org1.StartCoroutine(org1.Exhausted());
         org2.StartCoroutine(org2.Exhausted());
-
-        //Remove parents from selectedlist
-        selectedOrganisms.Remove(org1);
-        selectedOrganisms.Remove(org2);
     }
 }
